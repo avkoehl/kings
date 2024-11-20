@@ -1,5 +1,12 @@
+#import nest_asyncio
+#nest_asyncio.apply()
+
+import asyncio
+asyncio.set_event_loop(asyncio.new_event_loop())
+
 import os
 from pathlib import Path
+import json
 
 from pygeohydro import WBD
 from pynhd import NHD
@@ -18,12 +25,35 @@ def huc_boundary(hucid, layer='huc12'):
     geom = boundary.loc[0, 'geometry']
     return geom
 
-def process_watershed(huc12):
-    # Create directory structure
-    base_dir = f"data/{huc12}"
-    ensure_dir(base_dir)
+            print(f"Could not get 1m DEM for basin {basin_id}: {e}")
+            # Fall back to 10m DEM
+            dem_10m.rio.clip([basin_geom]).rio.to_raster(f"{base_dir}/{basin_id}-dem-10m.tif")
+        
+        # Get NHD flowlines
+        nhd = NHD('flowline')
+        flowlines = nhd.bygeom(basin_geom)
+        if not flowlines.empty:
+            flowlines.to_file(f"{base_dir}/{basin_id}-flowlines.shp")
 
-    boundary = huc_boundary(huc12)
+# Initialize WhiteboxTools
+working_dir = "../data/workingdir/"
+ensure_dir(working_dir)
+wbt = whitebox.WhiteboxTools()
+wbt.set_working_dir("../data/workingdir/")
+
+
+# load huc 12s:
+with open("../input_data/huc12s.json") as f:
+    huc12s = json.load(f)
+
+
+huc12 = huc12s[0]
+
+# Create directory structure for outputs for that huc
+base_dir = f"../data/{huc12}"
+ensure_dir(base_dir)
+
+boundary = huc_boundary(huc12)
 
     dem_10m = py3dep.get_dem(boundary, resolution=10)
     dem_10m_path = f"{base_dir}/dem_10m.tif"
@@ -35,6 +65,8 @@ def process_watershed(huc12):
         f"{base_dir}/isobasins.tif",
         size=2000  # Adjust size parameter as needed
     )
+
+    # load
     
     # Convert isobasins raster to vector
     wbt.raster_to_vector_polygons(
@@ -57,30 +89,3 @@ def process_watershed(huc12):
             dem_1m = get_3dep_dem(basin_geom, resolution=1)
             dem_1m.rio.to_raster(f"{base_dir}/{basin_id}-dem-1m.tif")
         except Exception as e:
-            print(f"Could not get 1m DEM for basin {basin_id}: {e}")
-            # Fall back to 10m DEM
-            dem_10m.rio.clip([basin_geom]).rio.to_raster(f"{base_dir}/{basin_id}-dem-10m.tif")
-        
-        # Get NHD flowlines
-        nhd = NHD('flowline')
-        flowlines = nhd.bygeom(basin_geom)
-        if not flowlines.empty:
-            flowlines.to_file(f"{base_dir}/{basin_id}-flowlines.shp")
-
-# Initialize WhiteboxTools
-wbt = whitebox.WhiteboxTools()
-wbt.set_workingdir("../workingdir/")
-
-# Process all HUC12s
-huc12s = [
-    '180101070402',
-    '180101070401',
-    '180101070201',
-    '180101070204',
-    '180101070207'
-]
-
-for huc12 in huc12s:
-    print(f"Processing HUC12: {huc12}")
-    process_watershed(huc12)
-    print(f"Completed processing HUC12: {huc12}")
