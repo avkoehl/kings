@@ -16,6 +16,7 @@ xarray = "^2024.10.0"
 pandas = "^2.2.3"
 py3dep = "^0.18.0"
 valleyx = { git = "ssh://git@github.com/avkoehl/valleyx.git", branch = "main" }
+networkx = "^3.4.2"
 
 [tool.poetry.group.dev.dependencies]
 matplotlib = "^3.9.2"
