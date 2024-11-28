@@ -1,19 +1,27 @@
+import json
 import os
 import shutil
 
 import rioxarray as rxr
 import geopandas as gpd
 import networkx as nx
+import numpy as np
+from shapely.geometry import shape
 from shapely.geometry import Point
+from shapely.geometry import Polygon
+from rasterio import features
 from valleyx import flow_analysis
 from valleyx.utils import setup_wbt
 from valleyx.terrain.subbasins import label_subbasins_pour_points
 
 def catchments(dem, flowlines, wbt):
     """
+    input:
     dem, xarray
     flowlines, xarray
     wbt, whitebox instance
+    returns:
+    regions gdf, aligned_flowlines
 
     split the huc12 watershed into smaller catchments:
 
@@ -27,10 +35,20 @@ def catchments(dem, flowlines, wbt):
     flowlines = keep_only_streams(flowlines)
     flowlines, dataset = flow_analysis(dem, flowlines, wbt)
     pour_points = subcatchment_breaks(flowlines)
-    watersheds = label_subbasin_pour_points(dataset['flow_dir'], pour_points, wbt)
-    return watersheds
+    watersheds = label_subbasins_pour_points(dataset['flow_dir'], pour_points, wbt)
+    regions = vectorize_watersheds(watersheds)
 
+    indexes_to_drop = []
+    for index,row in regions.iterrows():
+        # if no flowline runs through it, drop it
+        if flowlines.intersects(row['geometry']).sum() < 1:
+            indexes_to_drop.append(index)
 
+    regions = regions.drop(indexes_to_drop)
+    # keep only the region with the biggest area for each feature value
+    regions['area'] = regions.geometry.area
+    regions = regions.sort_values('area', ascending=False).groupby('feature_value').first()
+    return regions, flowlines
 
 def keep_only_streams(flowlines):
     return flowlines.loc[flowlines['ftype'] == 460]
@@ -181,17 +199,64 @@ def find_mainstem(G, outlet_node):
         
     return mainstem[::-1]
 
+def vectorize_watersheds(watersheds):
+    results = features.shapes(watersheds, transform=watersheds.rio.transform())
+    records = []
+    for shp, value in results:
+        if np.isnan(value):
+            continue
+        if value == 0:
+            continue
+        shp = shape(shp)
+        record = {'geometry': shp, 'feature_value': value}
+        records.append(record)
+
+    df = gpd.GeoDataFrame.from_records(records)
+    df = gpd.GeoDataFrame(df, geometry='geometry', crs=watersheds.rio.crs)
+    df = df.sort_values(by='feature_value', ascending=True, inplace=False)
+    df = df.reset_index(drop=True)
+    return df
+
 if __name__ == "__main__":
-    working_dir = "./working_dir/"
-    dem_file
-    flowlines_file = 
 
+    all_regions = []
+    all_aligned_flowlines = []
 
-    if os.path.exists(working_dir):
-        shutil.rmtree(working_dir)
-    os.makedirs(working_dir)
-    
-    wbt =  setup_wbt(working_dir, verbose=True, max_procs=-1)
-    flowlines = gpd.read_file("../data/180101070401-flowlines.shp")
-    dem = rxr.open_rasterio("../data/180101070401-dem_10m.tif", masked=True).squeeze()
-    watersheds = catchments(dem, flowlines, wbt):
+    with open("../input_data/huc12s.json") as f:
+        huc12s = json.load(f)
+
+    for hucID in huc12s:
+        print(f"processing {hucID}")
+        # iterate through each dem and flowlines in data
+        working_dir = f"./working_dir/{hucID}"
+        dem_file = f"../data/{hucID}-dem_10m.tif"
+        flowlines_file = f"../data/{hucID}-flowlines.shp"
+
+        if os.path.exists(working_dir):
+            shutil.rmtree(working_dir)
+        os.makedirs(working_dir)
+        
+        wbt =  setup_wbt(working_dir, verbose=True, max_procs=-1)
+        flowlines = gpd.read_file(flowlines_file)
+        dem = rxr.open_rasterio(dem_file, masked=True).squeeze()
+        regions, flowlines = catchments(dem, flowlines, wbt)
+
+        # add hucID column, add catchmentID column
+        regions['hucID'] = hucID
+        regions['catchmentID'] = regions.index
+        regions = regions[['geometry', 'hucID', 'catchmentID']]
+
+        flowlines = flowlines.to_frame('geometry')
+        flowlines['hucID'] = hucID
+        flowlines['streamID'] = flowlines.index
+
+        all_regions.append(regions)
+        all_aligned_flowlines.append(flowlines)
+
+    all_regions = pd.concat(all_regions, ignore_index=True)
+    all_aligned_flowlines = pd.concat(all_aligned_flowlines, ignore_index=True)
+
+    all_regions.to_file('../data/all_regions.shp')
+    all_aligned_flowlines.to_file('../data/all_flowlines.shp')
+
+    shutil.rmtree("./working_dir")
