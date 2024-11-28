@@ -6,6 +6,7 @@ import rioxarray as rxr
 import geopandas as gpd
 import networkx as nx
 import numpy as np
+import pandas as pd
 from shapely.geometry import shape
 from shapely.geometry import Point
 from shapely.geometry import Polygon
@@ -243,8 +244,8 @@ if __name__ == "__main__":
 
         # add hucID column, add catchmentID column
         regions['hucID'] = hucID
-        regions['catchmentID'] = regions.index
-        regions = regions[['geometry', 'hucID', 'catchmentID']]
+        regions['cID'] = regions.index
+        regions = regions[['geometry', 'hucID', 'cID']]
 
         flowlines = flowlines.to_frame('geometry')
         flowlines['hucID'] = hucID
