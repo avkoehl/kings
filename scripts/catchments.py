@@ -38,6 +38,7 @@ def catchments(dem, flowlines, wbt):
     pour_points = subcatchment_breaks(flowlines)
     watersheds = label_subbasins_pour_points(dataset['flow_dir'], pour_points, wbt)
     regions = vectorize_watersheds(watersheds)
+    regions.crs="EPSG:3310"
 
     indexes_to_drop = []
     for index,row in regions.iterrows():

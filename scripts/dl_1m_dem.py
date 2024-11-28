@@ -8,7 +8,6 @@ import geopandas as gpd
 
 ODIR = "../data/catchments/"
 regions = gpd.read_file("../data/all_regions.shp")
-regions.crs="EPSG:3310"
 flowlines = gpd.read_file("../data/all_flowlines.shp")
 
 if os.path.exists(ODIR):
