@@ -5,6 +5,8 @@ import shutil
 import py3dep
 import rasterio
 import geopandas as gpd
+import rioxarray as rxr
+from rioxarray.merge import merge_arrays
 
 
 ODIR = "../data/catchments/"
@@ -36,12 +38,40 @@ for i,(index,row) in enumerate(regions.iterrows()):
     try:
         dem = py3dep.get_dem(region, crs="EPSG:4326", resolution=1)
         dem = dem.rio.reproject("EPSG:3310", 
-            rescampling=rasterio.enums.Resampling.bilinear)
+            resampling=rasterio.enums.Resampling.bilinear)
         dem.rio.to_raster(f"{ODIR}/{full_catchmentID}-1m_dem.tif")
     except Exception as e:
         print(f"failed to download {full_catchmentID} exception: {e}")
         failed_items.append(full_catchmentID)
 
-if len(failed_items):
-   for item in failed_items:
-      print(item)
+# for each failed one, split into smaller parts
+# download each part and mosaic
+regions['fullID'] = regions['hucID'] + '_' + regions['cID'].astype(str)
+for item in failed_items:
+    print(f"processing {item}")
+    row = regions.loc[regions['fullID'] == item].copy()
+    row = row.to_crs("4326")
+    bbox = row['geometry'].bounds
+    bbox['mid_x'] = (bbox['minx'] + bbox['maxx']) / 2
+    bbox['mid_y'] = (bbox['miny'] + bbox['maxy']) / 2
+    
+    # Create four smaller bounding boxes
+    split_bboxes = pd.DataFrame([
+        {'minx': bbox.iloc[0]['minx'], 'miny': bbox.iloc[0]['miny'], 'maxx': bbox.iloc[0]['mid_x'], 'maxy': bbox.iloc[0]['mid_y']},  # Bottom-left
+        {'minx': bbox.iloc[0]['mid_x'], 'miny': bbox.iloc[0]['miny'], 'maxx': bbox.iloc[0]['maxx'], 'maxy': bbox.iloc[0]['mid_y']},  # Bottom-right
+        {'minx': bbox.iloc[0]['minx'], 'miny': bbox.iloc[0]['mid_y'], 'maxx': bbox.iloc[0]['mid_x'], 'maxy': bbox.iloc[0]['maxy']},  # Top-left
+        {'minx': bbox.iloc[0]['mid_x'], 'miny': bbox.iloc[0]['mid_y'], 'maxx': bbox.iloc[0]['maxx'], 'maxy': bbox.iloc[0]['maxy']}   # Top-right
+    ])
+    
+    dems = []
+    for ind,box in split_bboxes.iterrows():
+        dem = py3dep.get_dem(tuple(box), crs="EPSG:4326", resolution=1)
+        dem = dem.rio.reproject("EPSG:3310", 
+            resampling=rasterio.enums.Resampling.bilinear)
+        dems.append(dem)
+
+
+    mosaic = merge_arrays(dems)
+    region = regions.loc[regions['fullID'] == item, "geometry"]
+    clipped = mosaic.rio.clip(region)
+    clipped.rio.to_raster(f"{ODIR}/{item}-1m_dem.tif")
