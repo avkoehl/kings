@@ -36,7 +36,7 @@ for i,(index,row) in enumerate(regions.iterrows()):
 
 
     try:
-        dem = py3dep.get_dem(region, crs="EPSG:4326", resolution=1)
+        dem = py3dep.get_dem(region.buffer(20), crs="EPSG:4326", resolution=1)
         dem = dem.rio.reproject("EPSG:3310", 
             resampling=rasterio.enums.Resampling.bilinear)
         dem.rio.to_raster(f"{ODIR}/{full_catchmentID}-1m_dem.tif")
@@ -51,7 +51,9 @@ for item in failed_items:
     print(f"processing {item}")
     row = regions.loc[regions['fullID'] == item].copy()
     row = row.to_crs("4326")
-    bbox = row['geometry'].bounds
+    geom = row['geometry']
+    geom = geom.buffer(20)
+    bbox = geom.bounds
     bbox['mid_x'] = (bbox['minx'] + bbox['maxx']) / 2
     bbox['mid_y'] = (bbox['miny'] + bbox['maxy']) / 2
     
