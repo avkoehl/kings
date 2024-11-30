@@ -2,6 +2,7 @@ from pathlib import Path
 import os
 import shutil
 
+import pandas as pd
 import py3dep
 import rasterio
 import geopandas as gpd
