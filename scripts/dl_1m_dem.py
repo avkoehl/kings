@@ -11,6 +11,7 @@ from rioxarray.merge import merge_arrays
 
 ODIR = "../data/catchments/"
 regions = gpd.read_file("../data/all_regions.shp")
+regions.crs = "EPSG:3310"
 flowlines = gpd.read_file("../data/all_flowlines.shp")
 
 if not os.path.exists(ODIR):
@@ -28,15 +29,16 @@ for i,(index,row) in enumerate(regions.iterrows()):
 
     print(f"processing region {i}, {percent}%, {row['hucID']} {row['cID']}")
 
-
-    repro = gpd.GeoSeries(row['geometry'], crs=regions.crs).to_crs("EPSG:4326")
-    region = repro.item()
+    row = row.copy()
     flow = flowlines.clip(row['geometry'], keep_geom_type=True, sort=True)
     flow.to_file(f"{ODIR}/{full_catchmentID}-flowlines.shp")
 
+    row['geometry'] = row['geometry'].buffer(20)
+    reprojected = gpd.GeoSeries(row['geometry'], crs=regions.crs).to_crs("EPSG:4326")
+    geom = reprojected.item()
 
     try:
-        dem = py3dep.get_dem(region.buffer(20), crs="EPSG:4326", resolution=1)
+        dem = py3dep.get_dem(geom, crs="EPSG:4326", resolution=1)
         dem = dem.rio.reproject("EPSG:3310", 
             resampling=rasterio.enums.Resampling.bilinear)
         dem.rio.to_raster(f"{ODIR}/{full_catchmentID}-1m_dem.tif")
@@ -50,9 +52,9 @@ regions['fullID'] = regions['hucID'] + '_' + regions['cID'].astype(str)
 for item in failed_items:
     print(f"processing {item}")
     row = regions.loc[regions['fullID'] == item].copy()
+    row['geometry'] = row['geometry'].buffer(20)
     row = row.to_crs("4326")
     geom = row['geometry']
-    geom = geom.buffer(20)
     bbox = geom.bounds
     bbox['mid_x'] = (bbox['minx'] + bbox['maxx']) / 2
     bbox['mid_y'] = (bbox['miny'] + bbox['maxy']) / 2
