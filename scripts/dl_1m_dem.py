@@ -8,7 +8,17 @@ import rasterio
 import geopandas as gpd
 import rioxarray as rxr
 from rioxarray.merge import merge_arrays
+from shapely.ops import linemerge
+from shapely.geometry import MultiLineString, LineString
 
+def clean_flowline(geom):
+    if isinstance(geom, LineString):
+        return geom
+    merged = linemerge(geom)
+    if isinstance(merged, LineString):
+        return merged
+    else:
+        return geom #multilinestring
 
 ODIR = "../data/catchments/"
 regions = gpd.read_file("../data/all_regions.shp")
@@ -32,6 +42,11 @@ for i,(index,row) in enumerate(regions.iterrows()):
 
     row = row.copy()
     flow = flowlines.clip(row['geometry'], keep_geom_type=True, sort=True)
+    flow['geometry'] = flow['geometry'].apply(clean_flowline)
+    # now for cases where that failed
+    flow = flow.explode()
+    flow = flow.loc[flow.length > 200]
+
     flow.to_file(f"{ODIR}/{full_catchmentID}-flowlines.shp")
 
     row['geometry'] = row['geometry'].buffer(20)
